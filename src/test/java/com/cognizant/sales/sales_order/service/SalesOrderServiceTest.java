@@ -29,19 +29,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class) // JUnit Jupiter integrates with Mockito
+@ExtendWith(MockitoExtension.class)
 public class SalesOrderServiceTest {
 
-    @Mock // Mockito creates a fake repository
+    @Mock
     private SalesOrderRepository salesOrderRepository;
 
-    @Mock // Mockito creates another fake repository
+    @Mock
     private ProductRepository productRepository;
 
-    @InjectMocks // Mockito creates an instance of SalesOrderService and injects the mocks into it
+    @InjectMocks
     private SalesOrderService salesOrderService;
 
-    // We will define some common objects here to reuse in our tests
+    // Common objects for tests
     private SalesOrderRequestDto requestDto;
     private Product product;
     private SalesOrder salesOrder;
@@ -49,7 +49,7 @@ public class SalesOrderServiceTest {
     @BeforeEach
     void setUp() {
         // This method, annotated with @BeforeEach, runs before every single test.
-        // It's perfect for setting up a clean state for each test run.
+        // It sets up a clean state for each test run.
         requestDto = new SalesOrderRequestDto();
         requestDto.setCustomerName("Test Customer");
 
@@ -103,11 +103,9 @@ public class SalesOrderServiceTest {
         // 1. Arrange: Define the behavior of our mocks.
         // "When productRepository.findByNameIgnoreCase is called with 'Laptop', then return our sample product."
         when(productRepository.findByNameIgnoreCase("Laptop")).thenReturn(Optional.of(product));
-
-        // "When salesOrderRepository.save is called with any SalesOrder object, then just return that same object back."
         when(salesOrderRepository.save(any(SalesOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        // 2. Act: Call the actual method we want to test.
+        // Act
         SalesOrder result = salesOrderService.createSalesOrder(requestDto);
 
         // 3. Assert: Verify that the outcome is what we expect.
@@ -122,7 +120,7 @@ public class SalesOrderServiceTest {
         // Total = 1200.00 + 240.00 = 1440.00
         assertThat(result.getTotal()).isEqualByComparingTo("1440.00");
 
-        // Finally, verify that our mock repositories were interacted with as expected.
+        // Verify mock interactions
         verify(productRepository, times(1)).findByNameIgnoreCase("Laptop");
         verify(salesOrderRepository, times(1)).save(any(SalesOrder.class));
     }
@@ -130,13 +128,13 @@ public class SalesOrderServiceTest {
     @Test
     @DisplayName("Should throw EntityNotFoundException when product does not exist")
     void testCreateSalesOrder_ProductNotFound() {
-        // 1. Arrange: This time, we tell the mock to return an empty result.
+        // Arrange
         when(productRepository.findByNameIgnoreCase("Laptop")).thenReturn(Optional.empty());
 
-        // 2. Act & 3. Assert: We assert that calling the method throws the expected exception.
+        // Act & Assert
         assertThrows(EntityNotFoundException.class, () -> salesOrderService.createSalesOrder(requestDto));
 
-        // Verify that the save method was never called because the process failed early.
+        // Verify save was not called
         verify(salesOrderRepository, never()).save(any(SalesOrder.class));
     }
 
