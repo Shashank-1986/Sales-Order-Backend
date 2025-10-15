@@ -202,3 +202,79 @@ You will also need to provide the production database password as an environment
 export PROD_DB_PASSWORD="your_production_db_password"
 java -jar -Dspring.profiles.active=production target/sales-order-0.0.1-SNAPSHOT.jar
 ```
+
+
+Project Q&A
+This section answers common questions about the project's design, scalability, security, and operational practices.
+
+1. What architecture and design patterns did you use and why?
+We chose a Layered Monolithic Architecture for its simplicity and effectiveness in creating a clean, maintainable codebase. This architecture strictly separates the application into three distinct layers:
+
+Controller/Web Layer: This is the entry point for all incoming HTTP requests. Its only job is to handle web-related tasks like validating requests and converting data into a format the application can use.
+Service/Business Layer: This is the core of the application. It contains all the business logic (e.g., how to create an order, calculate totals, or cancel an order) and coordinates the flow of data.
+Repository/Data Access Layer: This layer is responsible for all communication with the database, abstracting away the complexities of data persistence.
+This separation was chosen because it makes the application much easier to develop, test, and maintain. For example, we can test the business logic in the service layer without needing to start a web server.
+
+We also used the Data Transfer Object (DTO) pattern. Instead of exposing our internal database models directly through the API, we use DTOs (like SalesOrderRequestDto). This is a crucial design choice for two reasons:
+
+Security: It prevents sensitive or internal data from being accidentally exposed to the outside world.
+Flexibility: It allows us to change our database structure without breaking the public API contract that our clients depend on.
+2. How would you ensure the scalability and availability of the solution?
+The application was designed with scalability and high availability in mind.
+
+Scalability:
+
+Stateless Design: The application is stateless, using JSON Web Tokens (JWT) for authentication. This means any instance of the application can handle any user's request, allowing us to easily scale horizontally. We can run multiple instances of the application behind a load balancer to handle increased traffic.
+Efficient Data Handling: We've implemented caching for frequently accessed, rarely changed data (like the product catalog) to reduce database load. We also use techniques like @EntityGraph to prevent the "N+1 query problem," ensuring our database interactions are highly efficient.
+Availability:
+
+Redundancy: By running multiple application instances, we ensure that if one instance fails, the load balancer will automatically redirect traffic to the healthy ones, preventing downtime.
+Health Checks: The application includes Spring Boot Actuator, which exposes a /actuator/health endpoint. The load balancer uses this endpoint to monitor the health of each instance and ensure it only sends traffic to fully functional ones.
+Database High Availability: In a production environment, we would use a managed database service (like AWS RDS) configured for multi-availability zone deployment. This creates a standby replica of the database in a different physical location, which can take over automatically if the primary database fails.
+3. What security mechanisms did you implement and how would you validate them?
+We implemented several layers of security to protect the application and its data.
+
+Authentication: We use JSON Web Tokens (JWT). When a user signs in, they receive a digitally signed token. For every subsequent request to a protected endpoint, they must present this token in the Authorization header. The application validates the token's signature and expiration to confirm the user's identity.
+Authorization: We use Role-Based Access Control (RBAC), managed by Spring Security. Access to different API endpoints is restricted based on user roles. For example, only users with the ROLE_ADMIN can manage the product catalog, while regular users with ROLE_USER can only manage their sales orders.
+Input Validation: We use Jakarta Bean Validation (@Valid) on our DTOs in the controller layer. This ensures that all incoming data is well-formed and meets our business rules before it is processed, protecting against invalid data and potential injection attacks.
+Validation Strategy:
+
+Automated Integration Tests: Our test suite includes tests that verify our security rules. For example, we have tests that confirm an unauthenticated user receives a 401 Unauthorized error, and tests that ensure a user with ROLE_USER receives a 403 Forbidden error when trying to access an admin-only endpoint. We use @WithMockUser to simulate requests from users with different roles.
+Vulnerability Scanning: In a CI/CD pipeline, we would integrate automated security scanning tools (like OWASP ZAP or Snyk) to scan the application and its dependencies for known vulnerabilities.
+4. How would you ensure data integrity in concurrent scenarios?
+To handle scenarios where multiple users might try to modify the same piece of data at the same time (a "race condition"), we implemented Optimistic Locking.
+
+How it Works: The Product entity has a @Version field. When a user reads a product to update it, they also get its current version number. When they submit their update, the application checks if the version number in the database is still the same.
+If it is, the update proceeds, and the version number is incremented.
+If it's not (meaning another user updated it in the meantime), the update is rejected with an HTTP 409 Conflict error. This prevents the first user's changes from being silently overwritten.
+This approach is highly effective for web applications where data conflicts are relatively infrequent, as it avoids the performance overhead of pessimistic locking (locking the database row).
+
+5. How would you automate deployment and database migrations?
+Automation is key for reliable and frequent releases. Our strategy involves a CI/CD pipeline and a database migration tool.
+
+Automated Deployment (CI/CD):
+
+Trigger: The pipeline (e.g., using GitHub Actions) is automatically triggered on every push to the main branch.
+Test: It checks out the code and runs all unit and integration tests (./mvnw test). This is a critical quality gate.
+Build: If tests pass, it packages the application into a runnable JAR file (./mvnw clean package).
+Deploy: The pipeline then securely deploys this JAR file to the production environment, sets the necessary environment variables (like SPRING_PROFILES_ACTIVE=production and database credentials), and starts the application.
+Automated Database Migrations:
+
+Tool: While not yet implemented, the recommended approach is to use a tool like Flyway or Liquibase.
+Process: Database changes are written as versioned SQL scripts (e.g., V1__create_tables.sql, V2__add_product_version.sql) and stored in the project's source code. When the application starts, Flyway automatically checks the database to see which scripts have already been applied and runs only the new ones. This ensures the database schema is always in sync with the application code, across all environments, in a reliable and repeatable way. For production, ddl-auto is set to validate to prevent Hibernate from making any unexpected changes.
+6. What tools would you use for monitoring and logging?
+Effective monitoring and logging are essential for maintaining a healthy application in production.
+
+Monitoring:
+
+Metrics Collection: We use Spring Boot Actuator to expose detailed application metrics (like JVM memory, CPU usage, and HTTP request latencies) via a /actuator/prometheus endpoint.
+Metrics Storage & Visualization: We would set up a Prometheus server to periodically "scrape" (collect) these metrics. The data would then be visualized in Grafana dashboards, giving us real-time insight into the application's performance and health. We would also configure alerts in Grafana to notify the team of any issues (e.g., high error rates or low memory).
+Logging:
+
+Log Generation: The application uses SLF4J for structured logging, which is the standard for modern Java applications.
+Centralized Logging: In a distributed environment with multiple application instances, it's impractical to check log files on individual servers. We would configure the application to send its logs to a centralized logging platform like the ELK Stack (Elasticsearch, Logstash, Kibana) or Splunk. This allows us to search, analyze, and visualize logs from all instances in one place, making it much easier to troubleshoot issues.
+7. What challenges did you encounter and how did you solve them?
+One of the key challenges was ensuring efficient data retrieval and avoiding performance bottlenecks, particularly the N+1 query problem.
+
+The Problem: When fetching a list of sales orders, a naive implementation would first run one query to get the orders, and then N additional queries to get the associated items for each of the N orders. This is extremely inefficient and scales very poorly.
+The Solution: We solved this by using a JPA @EntityGraph in our SalesOrderRepository. This feature allows us to tell Spring Data JPA exactly which related entities (in this case, the orderItems) we want to load along with the parent SalesOrder. By defining this entity graph, we ensure that all the required data is fetched in a single, optimized SQL query with a JOIN, completely eliminating the N+1 problem and significantly improving performance.
